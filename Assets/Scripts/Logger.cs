@@ -1,32 +1,35 @@
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 using System;
+using System.Collections;
 
-public class Log : MonoBehaviour
+public class Logger : MonoBehaviour
 {
 	[SerializeField] private Label logOutputLabel;
 	[SerializeField] private RectTransform logOutputContentRT;
+	[SerializeField] private Scrollbar logVerticalScrollbar;
 	
-    public static Log instance;
+    public static Logger instance;
 	
 	void Awake()
 	{
 		instance = this;
 	}
 	
-	public void DisplayError(string errorMessage)
+	public void Error(string errorMessage)
 	{
 		string debugTag = "<color=#ff0000>[Error]</color>";
 		OutputMessage(errorMessage, debugTag);
 	}
 	
-	public void DisplayWarning(string warningMessage)
+	public void Warning(string warningMessage)
 	{
 		string debugTag = "<color=##ffff00>[Warning]</color>";
 		OutputMessage(warningMessage, debugTag);
 	}
 	
-	public void DisplayLog(string logMessage)
+	public void Log(string logMessage)
 	{
 		string debugTag = "<color=#0000ff>[Log]</color>";
 		OutputMessage(logMessage, debugTag);
@@ -38,10 +41,18 @@ public class Log : MonoBehaviour
 		if(logOutputLabel != null && logOutputContentRT != null)
 		{
 			logOutputLabel.ChangeText(logOutputLabel.GetText() +"\n" + $"{debugTag} {displayMessage}");
-			// float height = logOutputLabel.GetPreferredHeight();
-			float height = logOutputLabel.GetPreferredValuesString(135f).y;
+			float height = logOutputLabel.GetPreferredHeight();
+			// float height = logOutputLabel.GetPreferredValuesString(135f).y;
 			logOutputContentRT.sizeDelta = new Vector2(logOutputContentRT.sizeDelta.x, height + 10f);
+			logVerticalScrollbar.value = 0f;
+			StartCoroutine(LowerScrollbar());
 		}
 		Files.instance.AppendFileText("Log", $"[{DateTime.Now}]: {displayMessage}");
+	}
+	
+	public IEnumerator LowerScrollbar()
+	{
+		yield return null;
+		logVerticalScrollbar.value = 0f;
 	}
 }
