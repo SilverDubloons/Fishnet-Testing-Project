@@ -54,5 +54,7 @@ public class Logger : MonoBehaviour
 	{
 		yield return null;
 		logVerticalScrollbar.value = 0f;
+		yield return null;
+		logVerticalScrollbar.value = 0f;
 	}
 }

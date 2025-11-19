@@ -20,10 +20,8 @@ public class FriendUI : MonoBehaviour
 	public async void SetupFriendUI(Friend newFriend)
 	{
 		this.friend = newFriend;
-		// steamId = friend.Id;
 		state = friend.State;
 		nameLabel.ChangeText(friend.Name);
-		// var gameInfo = friend.GameInfo;
 		Friend.FriendGameInfo? gameInfo = friend.GameInfo;
 		if(gameInfo.HasValue)
 		{
@@ -118,5 +116,15 @@ public class FriendUI : MonoBehaviour
 			return FriendsList.GetStatePriority(val.state).CompareTo(FriendsList.GetStatePriority(state));
 		}
 		return friend.Name.CompareTo(val.friend.Name);
+	}
+	
+	public Sprite GetAvatarSprite()
+	{
+		return avatarImage.sprite;
+	}
+	
+	public void Click_Friend()
+	{
+		FriendInteractionPanel.instance.OpenPanel(friend);
 	}
 }

@@ -245,6 +245,11 @@ public class FriendsList : MonoBehaviour
 		{
 			return gameNameCache[appId];
 		}
+		
+		if(appId == NetworkInterface.instance.GetAppId())
+		{
+			return "Playing this game";
+		}
 
 		string url = $"https://store.steampowered.com/api/appdetails?appids={appId}";
 		using (UnityWebRequest request = UnityWebRequest.Get(url))
@@ -264,20 +269,32 @@ public class FriendsList : MonoBehaviour
 						if (appData["success"] != null && appData["success"].Value<bool>())
 						{
 							string gameName = appData["data"]["name"].ToString();
-							// gameNameCache[appId] = gameName;
-							gameNameCache.Add(appId, gameName);
+							if(!gameNameCache.ContainsKey(appId))
+							{
+                                gameNameCache.Add(appId, gameName);
+                            }
 							return gameName;
 						}
 					}
 				}
-				catch (Exception ex)
+				catch (Exception exception)
 				{
-					Logger.instance.Error($"Failed to parse game name for AppID: {appId}. Error: {ex.Message}");
+					Logger.instance.Error($"Failed to parse game name for AppID: {appId}. Error: {exception.Message}");
+					return string.Empty;
 				}
 			}
 
 			Logger.instance.Error($"Failed to fetch game name for AppID: {appId}");
 			return string.Empty;
 		}
+	}
+	
+	public Sprite GetFriendSprite(Friend friend)
+	{
+		if(friends.ContainsKey(friend))
+		{
+			return friends[friend].GetAvatarSprite();
+		}
+		return null;
 	}
 }
