@@ -25,13 +25,17 @@ public class Logger : MonoBehaviour
 	
 	public void Warning(string warningMessage)
 	{
-		string debugTag = "<color=##ffff00>[Warning]</color>";
+		string debugTag = "<color=#ffff00>[Warning]</color>";
 		OutputMessage(warningMessage, debugTag);
 	}
 	
-	public void Log(string logMessage)
+	public void Log(string logMessage, bool log = true)
 	{
-		string debugTag = "<color=#0000ff>[Log]</color>";
+		if(!log)
+		{
+			return;
+        }
+        string debugTag = "<color=#0000ff>[Log]</color>";
 		OutputMessage(logMessage, debugTag);
 	}
 	

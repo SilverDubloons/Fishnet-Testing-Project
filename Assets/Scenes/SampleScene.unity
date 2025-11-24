@@ -904,6 +904,7 @@ MonoBehaviour:
   networkManager: {fileID: 189568879}
   lobbySize: 4
   appId: 4170680
+  cachedLobbyData: {fileID: 11400000, guid: 0773f20c582c7364c8bc002d604dfc43, type: 2}
 --- !u!1 &273485851
 GameObject:
   m_ObjectHideFlags: 0

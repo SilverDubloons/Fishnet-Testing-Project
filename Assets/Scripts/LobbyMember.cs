@@ -16,7 +16,7 @@ public class LobbyMember : MonoBehaviour
 	public Friend? friend;
 	public bool readyStatus = false;
 	
-	public async void SetupLobbyMember(Friend newFriend)
+	public async void SetupLobbyMember(Friend newFriend, bool isReady)
 	{
 		SetPlayerVisibility(true);
 		friend = newFriend;
@@ -41,7 +41,8 @@ public class LobbyMember : MonoBehaviour
 				Logger.instance.Log($"Failed to get avatar for friend: {newFriend.Name} :(");
 			}
 		}
-	}
+		SetPlayerReady(isReady);
+    }
 	
 	public void SetPlayerVisibility(bool visible)
 	{
@@ -64,7 +65,7 @@ public class LobbyMember : MonoBehaviour
 	
 	public bool IsOpen()
 	{
-		if(inLobbyVisibilityObject.activeSelf)
+        if (inLobbyVisibilityObject.activeSelf)
 		{
 			return false;
 		}

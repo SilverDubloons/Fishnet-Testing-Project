@@ -23,21 +23,33 @@ public class FriendInteractionPanel : MonoBehaviour
 		visibilityObject.SetActive(false);
 	}
 	
-	public void OpenPanel(Friend friend)
+	public async void OpenPanel(Friend friend)
 	{
 		visibilityObject.SetActive(true);
 		selectedFriend = friend;
-		// if friend in this game lobby not searching join is active
-		Friend.FriendGameInfo? gameInfo = friend.GameInfo;
-		if(friend.IsPlayingThisGame && gameInfo.HasValue && gameInfo.Value.Lobby.HasValue && gameInfo.Value.Lobby.Value.MemberCount < gameInfo.Value.Lobby.Value.MaxMembers)
-		{
+        // if friend in this game lobby not searching join is active
+        // if(friend.IsPlayingThisGame && gameInfo.HasValue && gameInfo.Value.Lobby.HasValue && gameInfo.Value.Lobby.Value.MemberCount < gameInfo.Value.Lobby.Value.MaxMembers)
+        // if in lobby and not searching invite is active
+        Logger.instance.Log($"Checking if can invite {friend.Name} to current lobby");
+        if (NetworkInterface.instance.CurrentLobbyCanBeJoinedByFriends())
+        {
+            inviteButton.ChangeButtonEnabled(true);
+        }
+        else
+        {
+            inviteButton.ChangeButtonEnabled(false);
+        }
+        joinButton.ChangeButtonEnabled(false);
+        Logger.instance.Log($"Checking if can join friend {friend.Name}'s lobby");
+        Lobby? lobby = await NetworkInterface.instance.GetLobbyFromFriendIfJoinable(friend);
+		if(lobby.HasValue)
+        {
 			joinButton.ChangeButtonEnabled(true);
 		}
 		else
 		{
 			joinButton.ChangeButtonEnabled(false);
 		}
-		// if in lobby and not searching invite is active
 		
 		// chat always active
 	}
@@ -51,13 +63,20 @@ public class FriendInteractionPanel : MonoBehaviour
 		}
 		catch (System.Exception e)
 		{
-			Logger.instance.Log($"Error joining friend's lobby: {e.Message}");
+			Logger.instance.Error($"Error joining friend's lobby: {e.Message}");
         }
     }
 	
 	public void Click_Invite()
 	{
-		selectedFriend.InviteToGame("Come on in big guy");
+		string lobbyJoinString = NetworkInterface.instance.GetCurrentLobbyIdStringForConnection();
+		if (string.IsNullOrEmpty(lobbyJoinString))
+		{ 
+			Logger.instance.Warning("No current lobby to invite friend to, lobby is full, or unjoinable");
+            visibilityObject.SetActive(false);
+            return;
+        }
+        selectedFriend.InviteToGame(lobbyJoinString);
         visibilityObject.SetActive(false);
 	}
 	

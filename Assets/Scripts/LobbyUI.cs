@@ -4,6 +4,7 @@ using Steamworks;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using static CachedLobbyData;
 
 public class LobbyUI : MonoBehaviour
 {
@@ -22,14 +23,14 @@ public class LobbyUI : MonoBehaviour
 		instance = this;
 	}
 	
-	public void JoinLobby(Lobby? currentLobby)
+	public void JoinLobby(Lobby? lobby)
 	{
-		if(currentLobby.HasValue && currentLobby.Value.Id.IsValid)
+		if(lobby.HasValue && lobby.Value.Id.IsValid)
 		{
-			Friend[] friendsInLobby = currentLobby.Value.Members.ToArray();
+			Friend[] friendsInLobby = lobby.Value.Members.ToArray();
 			for(int i = 0; i < friendsInLobby.Length; i++)
 			{
-				LobbyMemberJoined(friendsInLobby[i]);
+				LobbyMemberJoined(friendsInLobby[i], lobby.Value);
 			}
 		}
 	}
@@ -37,7 +38,7 @@ public class LobbyUI : MonoBehaviour
 	void Start()
 	{
 		SetupLocalLobbyMember();
-		SetCanLeaveLobby(false);
+		// SetCanLeaveLobby(false);
     }
 	
 	private async void SetupLocalLobbyMember()
@@ -57,26 +58,33 @@ public class LobbyUI : MonoBehaviour
 		lobbyMembers[0].friend = new Friend(SteamClient.SteamId);
 	}
 	
-	public void LobbyMemberJoined(Friend friend)
+	public void LobbyMemberJoined(Friend friend, Lobby lobby)
 	{
 		for(int i = 0; i < lobbyMembers.Length; i++)
-		{	// this probably only needs to check lobbyMembers[0] for the player themselves, but this can't hurt
-			if(lobbyMembers[i].friend.HasValue && lobbyMembers[i].friend.Value.Id == friend.Id)
+		{   // this probably only needs to check lobbyMembers[0] for the player themselves,
+            // but this can't hurt in case steam sends duplicate join events
+            if (lobbyMembers[i].friend.HasValue && lobbyMembers[i].friend.Value.Id == friend.Id)
 			{
 				return;
 			}
 		}
 		for(int i = 1; i < lobbyMembers.Length; i++)
 		{
-			if(lobbyMembers[i].IsOpen())
+            if (lobbyMembers[i].IsOpen())
 			{
-				lobbyMembers[i].SetupLobbyMember(friend);
-				return;
-			}
+				if (Enum.TryParse(lobby.GetMemberData(friend, LobbyKeys.Ready), out ReadyState readyState))
+				{
+					lobbyMembers[i].SetupLobbyMember(friend, readyState == ReadyState.Ready);
+				}
+				else
+				{
+					lobbyMembers[i].SetupLobbyMember(friend, false);
+                }
+                return;
+            }
 		}
 		Logger.instance.Error("Lobby member joined with no slots open in UI");
 	}
-	
 	public void LobbyMemberLeft(Friend friend)
 	{
 		bool moveRemainingMembersUp = false;
@@ -111,7 +119,7 @@ public class LobbyUI : MonoBehaviour
 		SetCanLeaveLobby(false);
     }
 
-	public void Click_LeaveLobby()
+	public async void Click_LeaveLobby()
 	{
 		NetworkInterface.instance.LeaveCurrentLobby();
 		if (readyToggle.isOn)
@@ -120,25 +128,26 @@ public class LobbyUI : MonoBehaviour
 			ReadyStateChanged();
 		}
 		SetCanLeaveLobby(false);
+        await NetworkInterface.instance.StartSteamLobby();
     }
 	public void SetCanLeaveLobby(bool canLeave)
 	{
-		if(leaveLobbyButton.gameObject.activeSelf == canLeave)
+		if(leaveLobbyButton.buttonEnabled == canLeave)
 		{
 			return;
 		}
-		leaveLobbyButton.gameObject.SetActive(canLeave);
-		Logger.instance.Log($"SetCanLeaveLobby: {canLeave}");
+		leaveLobbyButton.ChangeButtonEnabled(canLeave);
+		// Logger.instance.Log($"SetCanLeaveLobby: {canLeave}");
     }
 
     public void SetCanChangeReadyState(bool canChangeReadyState)
     {
-		if (readyToggle.gameObject.activeSelf == canChangeReadyState)
+		if (readyToggle.interactable == canChangeReadyState)
 		{
 			return;
 		}
-        readyToggle.gameObject.SetActive(canChangeReadyState);
-		Logger.instance.Log($"SetCanChangeReadyState: {canChangeReadyState}");
+        readyToggle.interactable= canChangeReadyState;
+		// Logger.instance.Log($"SetCanChangeReadyState: {canChangeReadyState}");
     }
 
 	public void ReadyStateChanged()
@@ -149,7 +158,8 @@ public class LobbyUI : MonoBehaviour
 
 	public void UpdateLobbyMemberReadyStatus(Friend friend, bool isReady)
 	{
-		for(int i = 0; i < lobbyMembers.Length; i++)
+		Logger.instance.Log($"UpdateLobbyMemberReadyStatus called for {friend.Name} to {isReady} lobbyMembers.Length: {lobbyMembers.Length}");
+        for (int i = 0; i < lobbyMembers.Length; i++)
 		{
 			if(lobbyMembers[i].friend.HasValue && lobbyMembers[i].friend.Value.Id == friend.Id)
 			{
@@ -164,22 +174,49 @@ public class LobbyUI : MonoBehaviour
 		}
 	}
 
-	public void LobbyUpdated(Lobby lobby)
+
+    public void LobbyUpdated(Lobby lobby)
+	{
+		UpdateLobbyDataString(lobby);
+        if ((Enum.TryParse(lobby.GetData(LobbyKeys.LobbyState), out LobbyState lobbyState) && lobbyState == LobbyState.GameStarting) || lobby.MemberCount == 1)
+		{
+            SetCanLeaveLobby(false);
+        }
+		else
+		{
+            SetCanLeaveLobby(true);
+        }
+		if (lobbyState == LobbyState.GameStarting)
+		{
+			SetCanChangeReadyState(false);
+		}
+		else
+		{
+            SetCanChangeReadyState(true);
+        }
+    }
+    public bool GetPlayerReady()
+    {
+        return readyToggle.isOn;
+    }
+	private void UpdateLobbyDataString(Lobby lobby)
 	{
         string lobbyDataString = "Lobby Data:\n";
-		lobbyDataString += $"Id: {lobby.Id}\n";
-		lobbyDataString += $"Owner: {lobby.Owner.Name}\n";
+        lobbyDataString += $"Id : {lobby.Id}\n";
+        lobbyDataString += $"Owner : {lobby.Owner.Name}\n";
         foreach (var entry in lobby.Data)
         {
             lobbyDataString += $"{entry.Key} : {entry.Value}\n";
         }
-		lobbyDataString += $"{lobby.MemberCount}/{lobby.MaxMembers}\n";
+        lobbyDataString += $"{lobby.MemberCount}/{lobby.MaxMembers}\n";
         Friend[] friendsInLobby = lobby.Members.ToArray();
-		foreach (var freind in friendsInLobby)
-		{ 
-			string readyStatus = lobby.GetMemberData(freind, "ready");
-            lobbyDataString += $"{freind.Name} : {readyStatus}\n";
+        foreach (var friend in friendsInLobby)
+        {
+            string readyStatus = lobby.GetMemberData(friend, LobbyKeys.Ready);
+            lobbyDataString += $"{friend.Name} : {readyStatus}\n";
         }
+		lobbyDataString += "Queued With:\n";
+		lobbyDataString += NetworkInterface.instance.GetFriendsQueuedWithString();
         lobbyDataLabel.ChangeText(lobbyDataString);
     }
 }

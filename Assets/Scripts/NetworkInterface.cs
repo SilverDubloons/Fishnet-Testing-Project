@@ -12,6 +12,8 @@ using TMPro;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using static CachedLobbyData;
+using System.Collections.Generic;
 
 // Unity version 6000.2.9f1
 // FishNetworking version 4.6.16R.Prerelease.01
@@ -20,18 +22,20 @@ using UnityEngine.InputSystem;
 
 public class NetworkInterface : MonoBehaviour
 {
-	[SerializeField] private TMP_InputField hostSteamIDInputField;
 	[SerializeField] private FishyFacepunch.FishyFacepunch fishyFacepunch;
 	[SerializeField] private NetworkManager networkManager;
 	public int lobbySize = 4;
 	public uint appId;
+    public CachedLobbyData cachedLobbyData;
+	public bool DefaultLobbiesToInvisible = false;
 
-	private bool eventsSubscribed = false;
+    private bool eventsSubscribed = false;
 	// private bool searchingForMatch = false;
 
 	private LocalConnectionState serverState = LocalConnectionState.Stopped;
 	private LocalConnectionState clientState = LocalConnectionState.Stopped;
 	private Lobby? currentLobby = null;
+	private List<Friend> friendsQueuedWith = new();
 
 	// public FishyFacepunch fishyFacepunch;
 	public static NetworkInterface instance;
@@ -40,7 +44,6 @@ public class NetworkInterface : MonoBehaviour
 	{
 		instance = this;
 	}
-
 	private void Start()
 	{
 		networkManager.ServerManager.OnServerConnectionState += OnServerConnectionStateChanged;
@@ -57,7 +60,7 @@ public class NetworkInterface : MonoBehaviour
 			{
 				bool joinedFromCommandLine = await JoinLobbyFromCommandLine();
 			}
-			SetFriendsCanJoin(true);
+			SetFriendsCanJoin();
 		}
 		catch (Exception e)
 		{
@@ -68,7 +71,6 @@ public class NetworkInterface : MonoBehaviour
 	{
 		SteamClient.RunCallbacks();
 	}
-
 	private void OnDestroy()
 	{
 		if (networkManager != null)
@@ -78,32 +80,17 @@ public class NetworkInterface : MonoBehaviour
 		}
 		UnsubscribeFromSteamEvents();
 		LeaveCurrentLobby();
-		SetFriendsCanJoin(false);
+		SetFriendsCanJoin();
 	}
-
 	private void OnApplicationQuit()
 	{
 		LeaveCurrentLobby();
 		UnsubscribeFromSteamEvents();
-		SetFriendsCanJoin(false);
+		SetFriendsCanJoin();
 	}
-
-	private string GetCommandLineArgument(string name)
-	{
-		var args = Environment.GetCommandLineArgs();
-		for (int i = 0; i < args.Length; i++)
-		{
-			if (args[i] == name && args.Length > i + 1)
-			{
-				return args[i + 1];
-			}
-		}
-		return null;
-	}
-
 	private async Task<bool> JoinLobbyFromCommandLine()
 	{
-		string lobbyIdStr = GetCommandLineArgument("+connect_lobby");
+		string lobbyIdStr = LocalInterface.GetCommandLineArgument("+connect_lobby");
 		Logger.instance.Log($"lobbyIdStr: {lobbyIdStr}");
 		if (string.IsNullOrEmpty(lobbyIdStr))
 		{
@@ -111,7 +98,6 @@ public class NetworkInterface : MonoBehaviour
 		}
 		return await JoinSteamLobbyFromId((SteamId)ulong.Parse(lobbyIdStr));
 	}
-
 	private async Task<bool> JoinLobbyFromSteamCommandLine()
 	{
 		string steamCommandLine = SteamApps.CommandLine;
@@ -130,8 +116,6 @@ public class NetworkInterface : MonoBehaviour
 			return false;
 		}
 	}
-
-
 	private void SubscribeToSteamEvents()
 	{
 		if (eventsSubscribed)
@@ -141,14 +125,19 @@ public class NetworkInterface : MonoBehaviour
 
 		SteamMatchmaking.OnLobbyMemberJoined += OnLobbyMemberJoined;
 		SteamMatchmaking.OnLobbyMemberLeave += OnLobbyMemberLeave;
-		SteamMatchmaking.OnLobbyDataChanged += OnLobbyDataChanged;
-		SteamFriends.OnGameRichPresenceJoinRequested += OnGameRichPresenceJoinRequested;
+        SteamMatchmaking.OnLobbyMemberKicked += OnLobbyMemberKicked;
+        SteamMatchmaking.OnLobbyDataChanged += OnLobbyDataChanged;
+		SteamMatchmaking.OnLobbyMemberDataChanged += OnLobbyMemberDataChanged;
+        SteamMatchmaking.OnLobbyEntered += OnLobbyEntered;
+        SteamMatchmaking.OnChatMessage += OnChatMessage;
+
+        SteamFriends.OnGameRichPresenceJoinRequested += OnGameRichPresenceJoinRequested;
 		SteamFriends.OnGameLobbyJoinRequested += OnGameLobbyJoinRequested;
+        
 
 		eventsSubscribed = true;
 		Logger.instance.Log("Steam events subscribed");
 	}
-
 	private void UnsubscribeFromSteamEvents()
 	{
 		if (!eventsSubscribed)
@@ -158,13 +147,19 @@ public class NetworkInterface : MonoBehaviour
 
 		SteamMatchmaking.OnLobbyMemberJoined -= OnLobbyMemberJoined;
 		SteamMatchmaking.OnLobbyMemberLeave -= OnLobbyMemberLeave;
-		SteamMatchmaking.OnLobbyDataChanged -= OnLobbyDataChanged;
-		SteamFriends.OnGameRichPresenceJoinRequested -= OnGameRichPresenceJoinRequested;
+		SteamMatchmaking.OnLobbyMemberKicked -= OnLobbyMemberKicked;
+        SteamMatchmaking.OnLobbyDataChanged -= OnLobbyDataChanged;
+        SteamMatchmaking.OnLobbyMemberDataChanged -= OnLobbyMemberDataChanged;
+        SteamMatchmaking.OnLobbyEntered -= OnLobbyEntered;
+		SteamMatchmaking.OnChatMessage -= OnChatMessage;
 
-		eventsSubscribed = false;
+        SteamFriends.OnGameRichPresenceJoinRequested -= OnGameRichPresenceJoinRequested;
+        SteamFriends.OnGameLobbyJoinRequested -= OnGameLobbyJoinRequested;
+        
+
+        eventsSubscribed = false;
 		Logger.instance.Log("Steam events unsubscribed");
 	}
-
 	public void StartServer()
 	{
 		if (networkManager == null)
@@ -182,18 +177,17 @@ public class NetworkInterface : MonoBehaviour
 			networkManager.ServerManager.StopConnection(true);
 		}
 	}
-
 	public void StartClient(string clientAddress)
 	{
-		if (networkManager == null)
+        Logger.instance.Log($"Starting client connection to address: {clientAddress} clientState: {clientState}");
+        if (networkManager == null)
 		{
 			Logger.instance.Error("NetworkInterface StartClient no networkManager");
 			return;
 		}
-
 		if (clientState == LocalConnectionState.Stopped)
 		{
-			fishyFacepunch.SetClientAddress(clientAddress);
+            fishyFacepunch.SetClientAddress(clientAddress);
 			networkManager.ClientManager.StartConnection();
 		}
 		else
@@ -202,78 +196,183 @@ public class NetworkInterface : MonoBehaviour
 		}
 	}
 
-	private void OnServerConnectionStateChanged(ServerConnectionStateArgs scsa)
+    private void OnServerConnectionStateChanged(ServerConnectionStateArgs scsa)
 	{
 		serverState = scsa.ConnectionState;
 		Logger.instance.Log($"OnServerConnectionStateChanged {serverState}");
-	}
-
+		if (serverState == LocalConnectionState.Started)
+		{
+			if(!currentLobby.HasValue || !currentLobby.Value.Id.IsValid)
+			{
+				Logger.instance.Error("Current lobby is not valid when trying to start client after server start");
+                return;
+			}
+			if (currentLobby.Value.Owner.Id != SteamClient.SteamId)
+			{
+				return;
+			}
+            Logger.instance.Log($"Game is ready to start! clientState: {clientState}");
+            // StartClient(SteamClient.SteamId.ToString());
+			// Logger.instance.Log($"StartClient called! clientState: {clientState}");
+            currentLobby.Value.SetData(LobbyKeys.LobbyState, LobbyState.GameStarting.ToString());
+		}
+    }
 	private void OnClientConnectionStateChanged(ClientConnectionStateArgs ccsa)
 	{
 		clientState = ccsa.ConnectionState;
 		Logger.instance.Log($"OnClientConnectionStateChanged {clientState}");
 	}
-
 	private void OnLobbyMemberJoined(Lobby lobby, Friend friend)
 	{
-		Logger.instance.Log($"Player {friend.Name} joined the lobby! Lobby ID: {lobby.Id}, Member count: {lobby.MemberCount}");
-		LobbyUI.instance.LobbyMemberJoined(friend);
-	}
-
+        if (currentLobby.Value.Id != lobby.Id)
+        {
+            Logger.instance.Warning($"OnLobbyMemberJoined for a lobby that is not the current lobby. currentLobby.Value.Id: {currentLobby.Value.Id}, changed LobbyId: {lobby.Id}");
+            return;
+        }
+        Logger.instance.Log($"Player {friend.Name} joined the lobby! Lobby ID: {lobby.Id}, Member count: {lobby.MemberCount}");
+		LobbyUI.instance.LobbyMemberJoined(friend, lobby);
+		cachedLobbyData.OnLobbyMemberJoined(friend, lobby);
+        LobbyUI.instance.LobbyUpdated(lobby);
+		if(Enum.TryParse(lobby.GetData(LobbyKeys.LobbyState), out LobbyState lobbyState) && lobbyState != LobbyState.SearchingForGame)
+		{
+			if (!friendsQueuedWith.Contains(friend))
+			{
+				friendsQueuedWith.Add(friend);
+			}
+        }
+    }
 	private void OnLobbyMemberLeave(Lobby lobby, Friend friend)
 	{
-		Logger.instance.Log($"Player {friend.Name} left the lobby! Lobby ID: {lobby.Id}, Member count: {lobby.MemberCount}");
+        if (currentLobby.Value.Id != lobby.Id)
+        {
+            Logger.instance.Warning($"OnLobbyMemberLeave for a lobby that is not the current lobby. currentLobby.Value.Id: {currentLobby.Value.Id}, changed LobbyId: {lobby.Id}");
+            return;
+        }
+        Logger.instance.Log($"Player {friend.Name} left the lobby! Lobby ID: {lobby.Id}, Member count: {lobby.MemberCount}");
 		LobbyUI.instance.LobbyMemberLeft(friend);
-	}
-
+		cachedLobbyData.OnLobbyMemberLeave(lobby, friend);
+		if (Enum.TryParse(lobby.GetData(LobbyKeys.LobbyState), out LobbyState lobbyState) && lobbyState == LobbyState.SearchingForGame)
+		{
+			if (friendsQueuedWith.Contains(friend))
+			{
+				friendsQueuedWith.Remove(friend);
+				lobby.SetMemberData(LobbyKeys.Ready, ReadyState.NotReady.ToString());
+				if (lobby.Owner.Id == SteamClient.SteamId)
+				{
+					lobby.SetFriendsOnly();
+					lobby.SetData(LobbyKeys.LobbyType, LobbyType.FriendsOnly.ToString());
+					lobby.SetData(LobbyKeys.LobbyState, LobbyState.WaitingForReady.ToString());
+					Friend[] friendsInLobby = lobby.Members.ToArray();
+					for (int i = 0; i < friendsInLobby.Length; i++)
+					{
+						if (!friendsQueuedWith.Contains(friendsInLobby[i]))
+						{
+							lobby.SendChatString($"{LobbyKeys.KickMember}{friendsInLobby[i].Id}");
+						}
+					}
+				}
+			}
+		}
+        LobbyUI.instance.LobbyUpdated(lobby);
+    }
+	private void OnLobbyMemberKicked(Lobby lobby, Friend kickedFriend, Friend friendWhoKicked)
+	{
+		Logger.instance.Log($"Player {kickedFriend.Name} was kicked from the lobby by {friendWhoKicked.Name}! Lobby ID: {lobby.Id}, Member count: {lobby.MemberCount}");
+        // only do this if it doesn't also trigger onlobbymemberleave
+        OnLobbyMemberLeave(lobby, kickedFriend);
+    }
 	private void OnLobbyDataChanged(Lobby lobby)
 	{
-		if (currentLobby.HasValue && currentLobby.Value.Id.IsValid)
+		// Logger.instance.Log($"OnLobbyDataChanged");
+		// if(cachedLobbyData.lobbyId != lobby.Id)
+		if(currentLobby.Value.Id != lobby.Id)
 		{
-			try
+			// Logger.instance.Log($"Lobby data changed for a lobby that is not the current cached lobby. cachedLobbyId: {cachedLobbyData.lobbyId}, changedLobbyId: {lobby.Id}");
+			Logger.instance.Warning($"OnLobbyDataChanged for a lobby that is not the current lobby. currentLobby.Value.Id: {currentLobby.Value.Id}, changed LobbyId: {lobby.Id}");
+			return;
+        }
+        LobbyChanges lobbyChanges = cachedLobbyData.GetLobbyChanges(lobby);
+		if (!lobbyChanges.Any)
+		{
+            // Logger.instance.Log($"No relevant lobby changes");
+            return;
+		}
+		if (lobbyChanges.ownerChange.LobbyOwnerChanged)
+		{
+			Logger.instance.Log($"Lobby owner changed from {lobbyChanges.ownerChange.OldOwner} to {lobbyChanges.ownerChange.NewOwner}");
+        }
+		if (lobbyChanges.typeChange.LobbyTypeChanged)
+		{ 
+			Logger.instance.Log($"Lobby type changed from {lobbyChanges.typeChange.OldType} to {lobbyChanges.typeChange.NewType}");
+			SetFriendsCanJoin();
+        }
+		if (lobbyChanges.stateChange.LobbyStateChanged)
+		{ 
+			Logger.instance.Log($"Lobby state changed from {lobbyChanges.stateChange.OldState} to {lobbyChanges.stateChange.NewState}");
+			SetFriendsCanJoin();
+            if (lobbyChanges.stateChange.NewState == LobbyState.Join)
 			{
-				Friend[] friendsInLobby = currentLobby.Value.Members.ToArray();
-				for (int i = 0; i < friendsInLobby.Length; i++)
+				string lobbyStateString = lobby.GetData(LobbyKeys.LobbyState);
+				string rawId = lobbyStateString[LobbyState.Join.ToString().Length..];
+				if (ulong.TryParse(rawId, out ulong targetId))
 				{
-					string readyStatus = currentLobby.Value.GetMemberData(friendsInLobby[i], "ready");
-					if (!string.IsNullOrEmpty(readyStatus))
-					{
-						LobbyUI.instance.UpdateLobbyMemberReadyStatus(friendsInLobby[i]
-						, bool.Parse(readyStatus));
-					}
+					_ = JoinSteamLobbyFromId(targetId);
+					return;
 				}
-				if (currentLobby.Value.GetData("LobbyState") != "Starting game")
+				Logger.instance.Error($"Lobby state set to join but lobby state format was incorrect. rawId: {rawId} targetId: {targetId}");
+			}
+			else if (lobbyChanges.stateChange.NewState == LobbyState.GameStarting)
+			{
+                StartClient(lobby.GetData(LobbyKeys.HostSteamId));
+            }
+        }
+        LobbyUI.instance.LobbyUpdated(lobby);
+    }
+
+	private void OnLobbyMemberDataChanged(Lobby lobby, Friend friend)
+	{
+        if (currentLobby.Value.Id != lobby.Id)
+        {
+            Logger.instance.Warning($"OnLobbyMemberDataChanged for a lobby that is not the current lobby. currentLobby.Value.Id: {currentLobby.Value.Id}, changed LobbyId: {lobby.Id}");
+            return;
+        }
+        ReadyStateChange readyStateChange = cachedLobbyData.GetReadyStateChange(lobby, friend);
+        Logger.instance.Log($"OnLobbyMemberDataChanged friend: {friend.Name}, readyChanged: {readyStateChange.ReadyStateChanged} OldState: {readyStateChange.OldState} NewState: {readyStateChange.NewState}");
+        if (readyStateChange.ReadyStateChanged)
+		{
+            CheckForAllPlayersReady();
+            LobbyUI.instance.UpdateLobbyMemberReadyStatus(friend, readyStateChange.NewState == ReadyState.Ready);
+        }
+        LobbyUI.instance.LobbyUpdated(lobby);
+    }
+	private void OnChatMessage(Lobby lobby, Friend friend, string message)
+	{
+        if (currentLobby.Value.Id != lobby.Id)
+        {
+            Logger.instance.Warning($"OnChatMessage for a lobby that is not the current lobby. currentLobby.Value.Id: {currentLobby.Value.Id}, messaged LobbyId: {lobby.Id}");
+            return;
+        }
+        Logger.instance.Log($"{friend.Name} sent chat message: {message}");
+		if(message.Length >= LobbyKeys.KickMember.Length && message.StartsWith(LobbyKeys.KickMember))
+		{
+			string rawId = message[LobbyKeys.KickMember.Length..];
+			if (ulong.TryParse(rawId, out ulong targetId))
+			{
+				if (targetId == SteamClient.SteamId)
 				{
-					CheckForAllPlayersReady();
-				}
-				if (!currentLobby.Value.IsOwnedBy(SteamClient.SteamId)
-					&& currentLobby.Value.GetData("LobbyState") == "Starting game" && clientState == LocalConnectionState.Stopped)
-				{
-					SetFriendsCanJoin(false);
-					StartClient(currentLobby.Value.GetData("HostSteamId"));
-				}
-				if (currentLobby.Value.MemberCount > 1 && currentLobby.Value.GetData("LobbyState") != "Starting game")
-				{
-					LobbyUI.instance.SetCanLeaveLobby(true);
-					if (currentLobby.Value.MemberCount < lobbySize && currentLobby.Value.GetData("LobbyState") != "Searching for game")
-					{
-						SetFriendsCanJoin(true);
-					}
+					Logger.instance.Log($"Kicking self from lobby as requested by {friend.Name}");
+					_ = KickSelfFromLobby();
 				}
 				else
 				{
-					LobbyUI.instance.SetCanLeaveLobby(false);
+					Logger.instance.Log($"Received kick request for non-self player Id: {targetId} from {friend.Name}");
 				}
-				LobbyUI.instance.LobbyUpdated(currentLobby.Value);
+				return;
 			}
-			catch (Exception e)
-			{
-				Logger.instance.Error($"Exception in OnLobbyDataChanged: {e.Message}");
-			}
+			Logger.instance.Error($"KickMember message format incorrect. rawId: {rawId} targetId: {targetId}");
 		}
 	}
-
-	private async void OnGameRichPresenceJoinRequested(Friend friend, string data)
+    private async void OnGameRichPresenceJoinRequested(Friend friend, string data)
 	{
 		Logger.instance.Log($"OnGameRichPresenceJoinRequested friend: {friend.Name}, data: {data}");
 		try
@@ -298,19 +397,49 @@ public class NetworkInterface : MonoBehaviour
 			Logger.instance.Log($"Failed to join lobby from OnGameLobbyJoinRequested: \"{lobby.Id}\" exception: {e.Message}");
 		}
 	}
-
-	public async Task StartSteamLobby()
+	private void OnLobbyEntered(Lobby lobby)
 	{
+        Logger.instance.Log($"OnLobbyEntered lobby: {lobby.Id}");
+        cachedLobbyData.SetupFromNewLobby(lobby);
+		SetFriendsCanJoin();
+        // LobbyUI.instance.LobbyUpdated(lobby);
+        LobbyUI.instance.JoinLobby(lobby);
+    }
+	public async Task KickSelfFromLobby()
+	{
+        LeaveCurrentLobby();
+        friendsQueuedWith.Sort((a, b) => b.Id.Value.CompareTo(a.Id.Value));
+        // If someone else has the highest ID, they should start a new lobby
+        if (friendsQueuedWith.Count > 0 && friendsQueuedWith[0].Id != SteamClient.SteamId)
+        {
+			await JoinSteamLobbyFromFriend(friendsQueuedWith[0], true);
+            return;
+        }
+        // Local player has the highest ID (or no friends queued with) — proceed
+       await StartSteamLobby();
+    }
+    public async Task StartSteamLobby()
+	{
+		LeaveCurrentLobby();
 		var result = await SteamMatchmaking.CreateLobbyAsync(lobbySize);
 		if (result != null)
 		{
 			currentLobby = result.Value;
-			SetPlayerReady(false);
-			currentLobby.Value.SetFriendsOnly();
-			currentLobby.Value.SetData("LobbyType", "Friends Only");
-			currentLobby.Value.SetData("HostSteamID", SteamClient.SteamId.ToString());
-			currentLobby.Value.SetData("LobbyState", "Not Searching");
-			Logger.instance.Log($"Created a new lobby with Id: {currentLobby.Value.Id} and HostSteamID: {currentLobby.Value.GetData("HostSteamID")}");
+			if (DefaultLobbiesToInvisible)
+			{
+				currentLobby.Value.SetInvisible();
+                currentLobby.Value.SetData(LobbyKeys.LobbyType, LobbyType.Invisible.ToString());
+            }
+			else
+			{
+                currentLobby.Value.SetFriendsOnly();
+                currentLobby.Value.SetData(LobbyKeys.LobbyType, LobbyType.FriendsOnly.ToString());
+            }
+			currentLobby.Value.SetData(LobbyKeys.HostSteamId, SteamClient.SteamId.ToString());
+            currentLobby.Value.SetData(LobbyKeys.LobbyState, LobbyState.WaitingForReady.ToString());
+            /*currentLobby.Value.SetData(LobbyKeys.JoinableState, DefaultLobbiesToJoinable ? JoinableState.Joinable.ToString() : JoinableState.NotJoinable.ToString());*/
+            SetFriendsCanJoin();
+			Logger.instance.Log($"Created a new lobby with Id: {currentLobby.Value.Id} and HostSteamID: {currentLobby.Value.GetData(LobbyKeys.HostSteamId)}");
 		}
 		else
 		{
@@ -320,19 +449,16 @@ public class NetworkInterface : MonoBehaviour
 
 	public async Task<bool> JoinSteamLobby(Lobby lobby)
 	{
+		Logger.instance.Log($"Joining lobby: {lobby.Id}");
+		LeaveCurrentLobby();
 		try
 		{
-			Logger.instance.Log($"Joining lobby: {lobby.Id}");
 			currentLobby = lobby;
 			await currentLobby.Value.Join();
-			LobbyUI.instance.JoinLobby(currentLobby);
-			// Get host SteamID if stored
-			string hostSteamId = currentLobby.Value.GetData("HostSteamID");
-			Logger.instance.Log($"Joined lobby: {currentLobby.Value.Id} hostId: {hostSteamId}");
-			if (string.IsNullOrEmpty(hostSteamId))
-			{
-				Logger.instance.Error($"Joined Steam lobby but hostSteamId is null or empty");
-			}
+            // LobbyUI.instance.JoinLobby(lobby);
+            // SetFriendsCanJoin();
+			SetPlayerReady(LobbyUI.instance.GetPlayerReady());
+			Logger.instance.Log($"Joined lobby: {currentLobby.Value.Id}");
 			return true;
 		}
 		catch (Exception e)
@@ -342,7 +468,7 @@ public class NetworkInterface : MonoBehaviour
 		}
 	}
 
-	public async Task<bool> JoinSteamLobbyFromFriend(Friend friend)
+	public async Task<bool> JoinSteamLobbyFromFriend(Friend friend, bool retry = false)
 	{
 		Logger.instance.Log($"Joining lobby from friend: {friend.Name}");
 		try
@@ -350,7 +476,27 @@ public class NetworkInterface : MonoBehaviour
 			Lobby? lobby = GetLobbyFromFriend(friend);
 			if (!lobby.HasValue)
 			{
-				return false;
+				if (retry)
+				{
+					Logger.instance.Log($"Retrying to get lobby from friend: {friend.Name}");
+					int retries = 0;
+					while (retries < 10 && !lobby.HasValue)
+					{
+						await Task.Delay(500);
+						lobby = GetLobbyFromFriend(friend);
+					}
+					if (!lobby.HasValue)
+					{
+						Logger.instance.Error($"Failed to get lobby from friend on retry: {friend.Name}");
+						return false;
+					}
+				}
+				else
+				{
+					Logger.instance.Error($"Failed to get lobby from friend: {friend.Name}");
+					return false;
+                }
+                return false;
 			}
 			if (!LobbyCanBeJoinedByFriends(lobby.Value))
 			{
@@ -367,11 +513,14 @@ public class NetworkInterface : MonoBehaviour
 
 	public async Task<bool> JoinSteamLobbyFromId(SteamId lobbyId)
 	{
+		Logger.instance.Log($"Joining lobby from Id: {lobbyId}");
+		LeaveCurrentLobby();
 		try
 		{
-			Logger.instance.Log($"Joining lobby from Id: {lobbyId}");
 			currentLobby = await SteamMatchmaking.JoinLobbyAsync(lobbyId);
-			LobbyUI.instance.JoinLobby(currentLobby);
+			// SetFriendsCanJoin();
+			SetPlayerReady(LobbyUI.instance.GetPlayerReady());
+			// LobbyUI.instance.JoinLobby(currentLobby);
 			Logger.instance.Log($"Joined lobby: {currentLobby.Value.Id}");
 			return true;
 		}
@@ -382,21 +531,21 @@ public class NetworkInterface : MonoBehaviour
 		}
 	}
 
-	public async void LeaveCurrentLobby()
+	public void LeaveCurrentLobby()
 	{
-		if (currentLobby.HasValue && currentLobby.Value.Id.IsValid)
+        Logger.instance.Log("LeaveCurrentLobby");
+        cachedLobbyData.Reset();
+        if (currentLobby.HasValue && currentLobby.Value.Id.IsValid)
 		{
 			currentLobby.Value.Leave();
 			currentLobby = null;
 			LobbyUI.instance.LeaveCurrentLobby();
-			Logger.instance.Log("Left lobby");
 		}
-		await StartSteamLobby();
 	}
 
 	private void SetRichPresence(string key, string val)
 	{
-		if (string.IsNullOrEmpty(SteamFriends.GetRichPresence(key)) || SteamFriends.GetRichPresence(key) != val)
+		if (SteamFriends.GetRichPresence(key) != val)
 		{
 			SteamFriends.SetRichPresence(key, val);
 			Logger.instance.Log($"SetRichPresence {key}: {val}");
@@ -408,25 +557,42 @@ public class NetworkInterface : MonoBehaviour
 		return (AppId)appId;
 	}
 
-	public async void SetFriendsCanJoin(bool friendsCanJoin)
+	public async void SetFriendsCanJoin()
 	{
-		Logger.instance.Log($"SetFriendsCanJoin: {friendsCanJoin}");
-		if (friendsCanJoin)
+		if (!currentLobby.HasValue || !currentLobby.Value.Id.IsValid)
 		{
+			await StartSteamLobby();
 			if (!currentLobby.HasValue || !currentLobby.Value.Id.IsValid)
 			{
-				await StartSteamLobby();
-			}
-			if (currentLobby.HasValue && currentLobby.Value.Id.IsValid && currentLobby.Value.MemberCount < currentLobby.Value.MaxMembers)
-			{
-				SetRichPresence("connect", $"{currentLobby.Value.Id}");
+				return;
 			}
 		}
-		else
+		if (!CurrentLobbyCanBeJoinedByFriends())
 		{
 			SetRichPresence("connect", null);
+            currentLobby.Value.SetInvisible();
+			currentLobby.Value.SetData(LobbyKeys.LobbyType, LobbyType.Invisible.ToString());
+            // currentLobby.Value.SetJoinable(false);
+            // currentLobby.Value.SetData(LobbyKeys.JoinableState, JoinableState.NotJoinable.ToString());
+            if (currentLobby.Value.GetData(LobbyKeys.LobbyState) == LobbyState.SearchingForGame.ToString())
+			{
+				SetRichPresence("gamestatus", "WaitingForMatch");
+			}
+			else
+			{
+                SetRichPresence("gamestatus", "AtMainMenu");
+            }
+			SetRichPresence("steam_display", "#StatusWithoutHealth");
+			return;
 		}
-	}
+		SetRichPresence("connect", $"{currentLobby.Value.Id}");
+		currentLobby.Value.SetFriendsOnly();
+		currentLobby.Value.SetData(LobbyKeys.LobbyType, LobbyType.FriendsOnly.ToString());
+        // currentLobby.Value.SetJoinable(true);
+        // currentLobby.Value.SetData(LobbyKeys.JoinableState, JoinableState.Joinable.ToString());
+        SetRichPresence("gamestatus", "Joinable");
+        SetRichPresence("steam_display", "#StatusWithoutHealth");
+    }
 
 	public void SetMemberData(string key, string val)
 	{
@@ -439,90 +605,105 @@ public class NetworkInterface : MonoBehaviour
 
 	public void SetPlayerReady(bool ready)
 	{
-		Logger.instance.Log($"SetPlayerReady: {ready}");
 		if (currentLobby.HasValue && currentLobby.Value.Id.IsValid)
 		{
-			SetMemberData("ready", ready.ToString());
-			if (ready)
-			{
-				CheckForAllPlayersReady();
-			}
-			else
-			{
-				if (currentLobby.Value.GetData("LobbyState") != "Starting game")
-				{
-					currentLobby.Value.SetData("LobbyState", "Not Searching");
-					currentLobby.Value.SetFriendsOnly();
-					currentLobby.Value.SetData("LobbyType", "Friends Only");
-				}
-			}
+			SetMemberData(LobbyKeys.Ready, ready ? ReadyState.Ready.ToString() : ReadyState.NotReady.ToString());
 		}
 	}
 
 	public void CheckForAllPlayersReady()
 	{
-		Logger.instance.Log("CheckForAllPlayersReady");
 		if (!currentLobby.HasValue || !currentLobby.Value.IsOwnedBy(SteamClient.SteamId))
 		{
 			return;
 		}
+        if (currentLobby.Value.GetData(LobbyKeys.LobbyState) == LobbyState.GameStarting.ToString())
+		{
+			return;
+		}
+        Logger.instance.Log("CheckForAllPlayersReady");
 		Friend[] friendsInLobby = currentLobby.Value.Members.ToArray();
 		for (int i = 0; i < friendsInLobby.Length; i++)
 		{
-			string readyStatus = currentLobby.Value.GetMemberData(friendsInLobby[i], "ready");
-			if (!string.IsNullOrEmpty(readyStatus) && !bool.Parse(readyStatus))
+            string readyStatus = currentLobby.Value.GetMemberData(friendsInLobby[i], LobbyKeys.Ready);
+			if (!Enum.TryParse(readyStatus, out ReadyState readyState) || readyState == ReadyState.NotReady)
 			{
-				return;
+                if (currentLobby.Value.GetData(LobbyKeys.LobbyState) == LobbyState.SearchingForGame.ToString())
+                {
+                    Logger.instance.Log("Stopping searching, someone unreadied");
+                    currentLobby.Value.SetFriendsOnly();
+                    currentLobby.Value.SetData(LobbyKeys.LobbyType, LobbyType.FriendsOnly.ToString());
+                    currentLobby.Value.SetData(LobbyKeys.LobbyState, LobbyState.WaitingForReady.ToString());
+                }
+                return;
 			}
-		}
-		// All players are ready, start searching for a game if there's
-		// less than lobbySize players, else start the game
-		if (currentLobby.Value.MemberCount < lobbySize && currentLobby.Value.GetData("LobbyState") != "Searching for game")
+        }
+        Logger.instance.Log("all players ready");
+        // All players are ready, start searching for a game if there's
+        // less than lobbySize players, else start the game
+        if (currentLobby.Value.MemberCount < lobbySize && currentLobby.Value.GetData(LobbyKeys.LobbyState) != LobbyState.SearchingForGame.ToString())
 		{
-			SetFriendsCanJoin(false);
-			currentLobby.Value.SetPublic();
-			currentLobby.Value.SetData("LobbyType", "Public");
-			currentLobby.Value.SetData("LobbyState", "Searching for game");
-			Logger.instance.Log("Searching for game");
+            Logger.instance.Log("Starting searching for game");
+            currentLobby.Value.SetPublic();
+			currentLobby.Value.SetData(LobbyKeys.LobbyType, LobbyType.Public.ToString());
+			currentLobby.Value.SetData(LobbyKeys.LobbyState, LobbyState.SearchingForGame.ToString());
+			_ = SearchForSteamLobbyToJoin();
 		}
-		else if (currentLobby.Value.MemberCount == lobbySize && currentLobby.Value.GetData("LobbyState") != "Starting game")
+		else if (currentLobby.Value.MemberCount == currentLobby.Value.MaxMembers)
 		{
 			StartServer();
-			StartClient(SteamClient.SteamId.ToString());
-			Logger.instance.Log("Starting server. clientState = {clientState}");
-			currentLobby.Value.SetData("LobbyState", "Starting game");
+			/*StartClient(SteamClient.SteamId.ToString());
+			Logger.instance.Log($"Game is ready to start! clientState = {clientState}");
+			currentLobby.Value.SetData(LobbyKeys.LobbyState, LobbyState.GameStarting.ToString());*/
 		}
 	}
 
 	public bool LobbyCanBeJoinedByFriends(Lobby lobby)
 	{
-		string lobbyState = lobby.GetData("LobbyState");
-		if (lobbyState == "Searching for game" || lobbyState == "Starting game")
+		string lobbyStateString = lobby.GetData(LobbyKeys.LobbyState);
+        if (!Enum.TryParse(lobbyStateString, out LobbyState lobbyState))
 		{
 			return false;
 		}
-		if (lobby.MemberCount >= lobby.MaxMembers)
+        if (lobbyState == LobbyState.SearchingForGame || lobbyState == LobbyState.GameStarting)
 		{
 			return false;
 		}
-		string lobbyType = lobby.GetData("LobbyType");
-		if (lobbyType == "Private")
+        if (lobby.MemberCount >= lobby.MaxMembers)
 		{
 			return false;
 		}
-		return true;
+		string lobbyTypeString = lobby.GetData(LobbyKeys.LobbyType);
+        if (!Enum.TryParse(lobbyTypeString, out LobbyType lobbyType))
+		{
+			return false;
+		}
+        if (lobbyType == LobbyType.Private || lobbyType == LobbyType.Invisible)
+		{
+			return false;
+		}
+        /*if (!Enum.TryParse(lobby.GetData(LobbyKeys.JoinableState), out JoinableState joinableState))
+		{
+			return false;
+		}
+        if (joinableState != JoinableState.Joinable)
+		{
+			return false;
+        }*/
+        return true;
 	}
 
-    public bool CurrentLobbyCanBeJoinedByFriends()
-    {
-        if (!currentLobby.HasValue || !currentLobby.Value.Id.IsValid)
-        {
-            return false;
-        }
-        return LobbyCanBeJoinedByFriends(currentLobby.Value);
-    }
 
-    public Lobby? GetLobbyFromFriend(Friend friend)
+    public bool CurrentLobbyCanBeJoinedByFriends()
+	{
+		if (!currentLobby.HasValue || !currentLobby.Value.Id.IsValid)
+		{
+			return false;
+		}
+		return LobbyCanBeJoinedByFriends(currentLobby.Value);
+	}
+
+	public Lobby? GetLobbyFromFriend(Friend friend)
 	{
 		if (!friend.IsPlayingThisGame)
 		{
@@ -535,4 +716,67 @@ public class NetworkInterface : MonoBehaviour
 		}
 		return gameInfo.Value.Lobby;
 	}
+
+	private async Task SearchForSteamLobbyToJoin()
+	{
+        LobbyQuery query = new();
+		query.WithSlotsAvailable(currentLobby.Value.MemberCount).WithKeyValue(LobbyKeys.LobbyState, LobbyState.SearchingForGame.ToString());
+        Lobby[] lobbies = await query.RequestAsync();
+		if (lobbies == null || lobbies.Length == 0)
+		{
+			Logger.instance.Log("No available lobbies found to join");
+			return;
+        }
+        Lobby targetLobby = lobbies[0];
+		SteamId targetLobbyId = targetLobby.Id;
+        currentLobby.Value.SetData(LobbyKeys.LobbyState, $"{LobbyState.Join}{targetLobbyId}");
+        Logger.instance.Log($"Joining lobby: {targetLobbyId} with {targetLobby.MemberCount}/{targetLobby.MaxMembers} players");
+        await JoinSteamLobby(targetLobby);
+    }
+
+	public string GetCurrentLobbyIdStringForConnection()
+	{
+		if (!currentLobby.HasValue || !currentLobby.Value.Id.IsValid)
+		{
+			return null;
+		}
+		if (!CurrentLobbyCanBeJoinedByFriends())
+		{
+			return null;
+		}
+        return currentLobby.Value.Id.ToString();
+    }
+	public async Task<Lobby?> GetLobbyFromFriendIfJoinable(Friend friend)
+	{
+		if (!friend.IsPlayingThisGame)
+		{
+			return null;
+		}
+        Friend.FriendGameInfo? gameInfo = friend.GameInfo;
+		if (!gameInfo.HasValue || !gameInfo.Value.Lobby.HasValue || !gameInfo.Value.Lobby.Value.Id.IsValid)
+		{
+			return null;
+		}
+		Lobby lobby = gameInfo.Value.Lobby.Value;
+		await lobby.RefreshAsync();
+        if (!LobbyCanBeJoinedByFriends(lobby))
+		{ 
+			return null;
+        }
+        return lobby;
+    }
+
+	public string GetFriendsQueuedWithString()
+	{
+		string result = "";
+		for (int i = 0; i < friendsQueuedWith.Count; i++)
+		{
+			result += friendsQueuedWith[i].Name;
+			if (i < friendsQueuedWith.Count - 1)
+			{
+				result += ", ";
+			}
+		}
+		return result;
+    }
 }

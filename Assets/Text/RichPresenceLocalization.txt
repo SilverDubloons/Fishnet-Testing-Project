@@ -1,0 +1,14 @@
+"lang"
+{
+	"english"
+	{
+		"tokens"
+		{
+			"#StatusWithoutHealth"	"{#Status_%gamestatus%}"
+			"#StatusWithHealth"	"{#Status_%gamestatus%}: %health% HP"
+			"#Status_AtMainMenu"	"At the main menu"
+			"#Status_Joinable"	"Joinable"
+			"#Status_WaitingForMatch"	"Waiting for match"
+		}
+	}
+}
