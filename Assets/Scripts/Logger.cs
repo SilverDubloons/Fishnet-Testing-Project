@@ -11,8 +11,10 @@ public class Logger : MonoBehaviour
 	[SerializeField] private Scrollbar logVerticalScrollbar;
 	
     public static Logger instance;
-	
-	void Awake()
+
+	public int minimumLogLevel = 0; // displays all logs by default, lower means less important
+
+    void Awake()
 	{
 		instance = this;
 	}
@@ -29,13 +31,14 @@ public class Logger : MonoBehaviour
 		OutputMessage(warningMessage, debugTag);
 	}
 	
-	public void Log(string logMessage, bool log = true)
+	public void Log(string logMessage, int logLevel = int.MaxValue)
 	{
-		if(!log)
+		if(logLevel < minimumLogLevel)
 		{
 			return;
         }
-        string debugTag = "<color=#0000ff>[Log]</color>";
+		string logLevelString = logLevel == int.MaxValue ? "MAX" : logLevel.ToString();
+        string debugTag = $"<color=#0000ff>[Log{logLevelString}]</color>";
 		OutputMessage(logMessage, debugTag);
 	}
 	

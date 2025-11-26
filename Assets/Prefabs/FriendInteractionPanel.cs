@@ -31,7 +31,7 @@ public class FriendInteractionPanel : MonoBehaviour
         // if(friend.IsPlayingThisGame && gameInfo.HasValue && gameInfo.Value.Lobby.HasValue && gameInfo.Value.Lobby.Value.MemberCount < gameInfo.Value.Lobby.Value.MaxMembers)
         // if in lobby and not searching invite is active
         Logger.instance.Log($"Checking if can invite {friend.Name} to current lobby");
-        if (NetworkInterface.instance.CurrentLobbyCanBeJoinedByFriends())
+        if (NetworkInterface.instance.CurrentPartyLobbyCanBeJoinedByFriends())
         {
             inviteButton.ChangeButtonEnabled(true);
         }
@@ -58,7 +58,7 @@ public class FriendInteractionPanel : MonoBehaviour
 	{
 		try
 		{
-			await NetworkInterface.instance.JoinSteamLobbyFromFriend(selectedFriend);
+			await NetworkInterface.instance.JoinSteamPartyLobbyFromFriend(selectedFriend);
 			visibilityObject.SetActive(false);
 		}
 		catch (System.Exception e)
@@ -69,7 +69,8 @@ public class FriendInteractionPanel : MonoBehaviour
 	
 	public void Click_Invite()
 	{
-		string lobbyJoinString = NetworkInterface.instance.GetCurrentLobbyIdStringForConnection();
+
+		string lobbyJoinString = NetworkInterface.instance.GetPartyLobbyIdStringForConnection();
 		if (string.IsNullOrEmpty(lobbyJoinString))
 		{ 
 			Logger.instance.Warning("No current lobby to invite friend to, lobby is full, or unjoinable");

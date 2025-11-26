@@ -28,6 +28,8 @@ public class CachedLobbyData : ScriptableObject
     public LobbyType lobbyType;
     public SteamId lobbyId;
     public bool log;
+    public string matchmakingValue;
+    public string hostId;
 
     [Header("Members")]
     [NonSerialized]
@@ -43,6 +45,7 @@ public class CachedLobbyData : ScriptableObject
         public const string LobbyType = "LobbyType";
         public const string HostSteamId = "HostSteamId";
         public const string JoinableState = "JoinableState";
+        public const string MatchmakingLobby = "MM";
 
         // Special chat keys
         public const string KickMember = "KickMember";
@@ -79,10 +82,11 @@ public class CachedLobbyData : ScriptableObject
             }
         }
         lobbyId = lobby.Id;
+        matchmakingValue = null;
     }
     public LobbyOwnerChange GetLobbyOwnerChange(Lobby lobby)
     {
-        Logger.instance.Log("GetLobbyOwnerChange", log);
+        Logger.instance.Log("GetLobbyOwnerChange", 10);
         if (lobby.Owner.Id == lobbyOwner.Id)
             return default;
 
@@ -93,7 +97,7 @@ public class CachedLobbyData : ScriptableObject
     public LobbyStateChange GetLobbyStateChange(Lobby lobby)
     {
         string stateString = lobby.GetData(LobbyKeys.LobbyState);
-        Logger.instance.Log($"GetLobbyStateChange 0 lobbyState: {lobbyState} stateString: {stateString}", log);
+        Logger.instance.Log($"GetLobbyStateChange 0 lobbyState: {lobbyState} stateString: {stateString}", 10);
         LobbyState parsedState;
         if (stateString.Length >= LobbyState.Join.ToString().Length && stateString.StartsWith(LobbyState.Join.ToString()))
         {
@@ -104,29 +108,53 @@ public class CachedLobbyData : ScriptableObject
             if (!Enum.TryParse(stateString, out parsedState))
                 return default;
         }
-        Logger.instance.Log("GetLobbyStateChange 1", log);
+        Logger.instance.Log("GetLobbyStateChange 1", 10);
 
         if (parsedState == lobbyState)
             return default;
 
-        Logger.instance.Log("GetLobbyStateChange 2", log);
+        Logger.instance.Log("GetLobbyStateChange 2", 10);
 
         LobbyState oldState = lobbyState;
         lobbyState = parsedState;
         return new LobbyStateChange(true, oldState, lobbyState);
     }
+    public MatchmakingStateChange GetMatchmakingStateChange(Lobby lobby)
+    {
+        string mmString = lobby.GetData(LobbyKeys.MatchmakingLobby);
+        Logger.instance.Log($"GetMatchmakingStateChange 0 matchmakingValue: {matchmakingValue} mmString: {mmString}", 10);
+        if (mmString == matchmakingValue)
+            return default;
+        Logger.instance.Log("GetMatchmakingStateChange 1", 10);
+        string oldValue = matchmakingValue;
+        matchmakingValue = mmString;
+        return new MatchmakingStateChange(true, oldValue, matchmakingValue);
+    }
+    public HostIdChange GetHostIdChange(Lobby lobby)
+    {
+        string hostIdString = lobby.GetData(LobbyKeys.HostSteamId);
+        Logger.instance.Log($"GetHostIdChange 0 hostIdString: {hostIdString}", 10);
+        if (string.IsNullOrEmpty(hostIdString) && string.IsNullOrEmpty(hostId))
+            return default;
+        if (hostId == hostIdString)
+            return default;
+        Logger.instance.Log("GetHostIdChange 1", 10);
+        string oldHostId = hostId;
+        hostId = hostIdString;
+        return new HostIdChange(true, oldHostId, hostId);
+    }
     public LobbyTypeChange GetLobbyTypeChange(Lobby lobby)
     {
-        Logger.instance.Log($"GetLobbyTypeChange 0 lobbyType: {lobbyType} LobbyTypeData: {lobby.GetData(LobbyKeys.LobbyType)}", log);
+        Logger.instance.Log($"GetLobbyTypeChange 0 lobbyType: {lobbyType} LobbyTypeData: {lobby.GetData(LobbyKeys.LobbyType)}", 10);
         if (!TryGetEnum(lobby, LobbyKeys.LobbyType, out LobbyType parsedType))
             return default;
 
-        Logger.instance.Log("GetLobbyTypeChange 1", log);
+        Logger.instance.Log("GetLobbyTypeChange 1", 10);
 
         if (parsedType == lobbyType)
             return default;
 
-        Logger.instance.Log("GetLobbyTypeChange 2", log);
+        Logger.instance.Log("GetLobbyTypeChange 2", 10);
 
         LobbyType oldType = lobbyType;
         lobbyType = parsedType;
@@ -134,12 +162,14 @@ public class CachedLobbyData : ScriptableObject
     }
     public LobbyChanges GetLobbyChanges(Lobby lobby)
     {
-        Logger.instance.Log("GetLobbyChanges", log);
+        Logger.instance.Log("GetLobbyChanges", 20);
         return new LobbyChanges()
         {
             ownerChange = GetLobbyOwnerChange(lobby),
             stateChange = GetLobbyStateChange(lobby),
-            typeChange = GetLobbyTypeChange(lobby)
+            typeChange = GetLobbyTypeChange(lobby),
+            matchmakingChange = GetMatchmakingStateChange(lobby),
+            hostIdChange = GetHostIdChange(lobby)
         };
     }
     public ReadyStateChange GetReadyStateChange(Lobby lobby, Friend friend)
@@ -237,15 +267,40 @@ public readonly struct ReadyStateChange
         NewState = newState;
     }
 }
+public readonly struct MatchmakingStateChange
+{
+    public bool MatchmakingStateChanged { get; }
+    public string OldState { get; }
+    public string NewState { get; }
+    public MatchmakingStateChange(bool changed, string oldState, string newState)
+    {
+        MatchmakingStateChanged = changed;
+        OldState = oldState;
+        NewState = newState;
+    }
+}
+public readonly struct HostIdChange
+{
+    public bool HostIdChanged { get; }
+    public string OldHostId { get; }
+    public string NewHostId { get; }
+    public HostIdChange(bool changed, string oldHostId, string newHostId)
+    {
+        HostIdChanged = changed;
+        OldHostId = oldHostId;
+        NewHostId = newHostId;
+    }
+}
 public struct LobbyChanges
 {
     public LobbyOwnerChange ownerChange;
     public LobbyStateChange stateChange;
     public LobbyTypeChange typeChange;
-
-    public readonly bool Any => ownerChange.LobbyOwnerChanged || stateChange.LobbyStateChanged || typeChange.LobbyTypeChanged;
+    public MatchmakingStateChange matchmakingChange;
+    public HostIdChange hostIdChange;
+    public readonly bool Any => ownerChange.LobbyOwnerChanged || stateChange.LobbyStateChanged || typeChange.LobbyTypeChanged || matchmakingChange.MatchmakingStateChanged || hostIdChange.HostIdChanged;
 }
-public enum LobbyState { Unset, WaitingForReady, SearchingForGame, GameStarting, Join }
+public enum LobbyState { Unset, WaitingForReady, SearchingForGame, GameStarting, Join, Matchmaking }
 public enum LobbyType { Unset, Public, Private, FriendsOnly, Invisible }
 public enum ReadyState { Unset, Ready, NotReady }
 public enum JoinableState { Unset, Joinable, NotJoinable }

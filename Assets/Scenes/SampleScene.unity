@@ -899,12 +899,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c1ed8157c2e3e2c489c9af920d7642b6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NetworkInterface
-  hostSteamIDInputField: {fileID: 0}
   fishyFacepunch: {fileID: 189568875}
   networkManager: {fileID: 189568879}
   lobbySize: 4
   appId: 4170680
-  cachedLobbyData: {fileID: 11400000, guid: 0773f20c582c7364c8bc002d604dfc43, type: 2}
+  cachedPartyLobbyData: {fileID: 11400000, guid: 0773f20c582c7364c8bc002d604dfc43, type: 2}
+  DefaultLobbiesToInvisible: 0
 --- !u!1 &273485851
 GameObject:
   m_ObjectHideFlags: 0

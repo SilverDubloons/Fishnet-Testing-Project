@@ -110,7 +110,7 @@ public class LobbyUI : MonoBehaviour
 		}
 	}
 	
-	public void LeaveCurrentLobby()
+	public void LeaveCurrentPartyLobby()
 	{
 		for(int i = 1; i < lobbyMembers.Length; i++)
 		{
@@ -121,14 +121,14 @@ public class LobbyUI : MonoBehaviour
 
 	public async void Click_LeaveLobby()
 	{
-		NetworkInterface.instance.LeaveCurrentLobby();
+		NetworkInterface.instance.LeaveCurrentPartyLobby();
 		if (readyToggle.isOn)
 		{
 			readyToggle.isOn = false;
 			ReadyStateChanged();
 		}
 		SetCanLeaveLobby(false);
-        await NetworkInterface.instance.StartSteamLobby();
+        await NetworkInterface.instance.StartSteamPartyLobby();
     }
 	public void SetCanLeaveLobby(bool canLeave)
 	{
@@ -149,7 +149,13 @@ public class LobbyUI : MonoBehaviour
         readyToggle.interactable= canChangeReadyState;
 		// Logger.instance.Log($"SetCanChangeReadyState: {canChangeReadyState}");
     }
-
+	public void SetReadyState(bool isReady)
+	{
+		if(readyToggle.isOn != isReady)
+		{
+			readyToggle.isOn = isReady;
+		}
+	}
 	public void ReadyStateChanged()
 	{
 		NetworkInterface.instance.SetPlayerReady(readyToggle.isOn);
@@ -158,7 +164,7 @@ public class LobbyUI : MonoBehaviour
 
 	public void UpdateLobbyMemberReadyStatus(Friend friend, bool isReady)
 	{
-		Logger.instance.Log($"UpdateLobbyMemberReadyStatus called for {friend.Name} to {isReady} lobbyMembers.Length: {lobbyMembers.Length}");
+		// Logger.instance.Log($"UpdateLobbyMemberReadyStatus called for {friend.Name} to {isReady} lobbyMembers.Length: {lobbyMembers.Length}");
         for (int i = 0; i < lobbyMembers.Length; i++)
 		{
 			if(lobbyMembers[i].friend.HasValue && lobbyMembers[i].friend.Value.Id == friend.Id)
@@ -215,8 +221,7 @@ public class LobbyUI : MonoBehaviour
             string readyStatus = lobby.GetMemberData(friend, LobbyKeys.Ready);
             lobbyDataString += $"{friend.Name} : {readyStatus}\n";
         }
-		lobbyDataString += "Queued With:\n";
-		lobbyDataString += NetworkInterface.instance.GetFriendsQueuedWithString();
+		lobbyDataString += "\nMMLobby:" + NetworkInterface.instance.GetMatchmakingLobbyIdString();
         lobbyDataLabel.ChangeText(lobbyDataString);
     }
 }

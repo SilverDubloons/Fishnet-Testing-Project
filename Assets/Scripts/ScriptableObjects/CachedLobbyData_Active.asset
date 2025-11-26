@@ -12,3 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 153bd95a01c9fb64ba09bc6f831745cd, type: 3}
   m_Name: CachedLobbyData_Active
   m_EditorClassIdentifier: Assembly-CSharp::CachedLobbyData
+  lobbyState: 0
+  lobbyType: 0
+  log: 1
+  matchmakingValue: 
+  hostId: 76561199818052236
