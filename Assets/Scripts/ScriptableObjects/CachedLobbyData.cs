@@ -123,7 +123,7 @@ public class CachedLobbyData : ScriptableObject
     {
         string mmString = lobby.GetData(LobbyKeys.MatchmakingLobby);
         Logger.instance.Log($"GetMatchmakingStateChange 0 matchmakingValue: {matchmakingValue} mmString: {mmString}", 10);
-        if (mmString == matchmakingValue)
+        if (mmString == matchmakingValue || string.IsNullOrEmpty(mmString) && string.IsNullOrEmpty(matchmakingValue))
             return default;
         Logger.instance.Log("GetMatchmakingStateChange 1", 10);
         string oldValue = matchmakingValue;

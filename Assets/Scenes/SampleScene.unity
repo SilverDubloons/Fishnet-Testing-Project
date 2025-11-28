@@ -1029,6 +1029,7 @@ MonoBehaviour:
   logOutputLabel: {fileID: 25728789}
   logOutputContentRT: {fileID: 939758225}
   logVerticalScrollbar: {fileID: 353200014}
+  minimumLogLevel: 20
 --- !u!1 &294910875
 GameObject:
   m_ObjectHideFlags: 0

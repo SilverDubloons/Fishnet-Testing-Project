@@ -1,9 +1,10 @@
-using UnityEngine;
-using Steamworks.Data;
 using Steamworks;
+using Steamworks.Data;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
+using UnityEngine.InputSystem;
 using static CachedLobbyData;
 
 public class LobbyUI : MonoBehaviour
@@ -22,7 +23,33 @@ public class LobbyUI : MonoBehaviour
 	{
 		instance = this;
 	}
-	
+	void Update()
+	{
+		if (Keyboard.current.qKey.wasPressedThisFrame)
+		{
+			Lobby? currentPartyLobby = NetworkInterface.instance.GetCurrentPartyLobby();
+			if (currentPartyLobby.HasValue)
+			{
+				UpdateLobbyDataString(currentPartyLobby.Value);
+			}
+			else
+			{
+                lobbyDataLabel.ChangeText("No current party lobby");
+			}
+		}
+		if (Keyboard.current.wKey.wasPressedThisFrame)
+		{
+			Lobby? currentMatchmakingLobby = NetworkInterface.instance.GetCurrentMatchmakingLobby();
+			if (currentMatchmakingLobby.HasValue)
+			{
+				UpdateLobbyDataString(currentMatchmakingLobby.Value);
+			}
+			else
+			{
+                lobbyDataLabel.ChangeText("No current matchmaking lobby");
+			}
+		}
+	}
 	public void JoinLobby(Lobby? lobby)
 	{
 		if(lobby.HasValue && lobby.Value.Id.IsValid)

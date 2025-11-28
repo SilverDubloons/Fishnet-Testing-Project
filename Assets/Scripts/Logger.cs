@@ -31,21 +31,21 @@ public class Logger : MonoBehaviour
 		OutputMessage(warningMessage, debugTag);
 	}
 	
-	public void Log(string logMessage, int logLevel = int.MaxValue)
+	public void Log(string logMessage, int logLevel = int.MaxValue, bool outputToLabel = false, bool outputToFile = false)
 	{
-		if(logLevel < minimumLogLevel)
+		if(logLevel < minimumLogLevel && !outputToLabel && !outputToFile)
 		{
 			return;
         }
 		string logLevelString = logLevel == int.MaxValue ? "MAX" : logLevel.ToString();
         string debugTag = $"<color=#0000ff>[Log{logLevelString}]</color>";
-		OutputMessage(logMessage, debugTag);
+		OutputMessage(logMessage, debugTag, outputToLabel, outputToFile);
 	}
-	
-	public void OutputMessage(string displayMessage, string debugTag)
+
+	public void OutputMessage(string displayMessage, string debugTag, bool outputToLabel = false, bool outputToFile = false)
 	{
 		Debug.Log($"<color=#ffa500>[Silver Dubloons]</color> {debugTag} {displayMessage}");
-		if(logOutputLabel != null && logOutputContentRT != null)
+		if(outputToLabel && logOutputLabel != null && logOutputContentRT != null)
 		{
 			logOutputLabel.ChangeText(logOutputLabel.GetText() +"\n" + $"{debugTag} {displayMessage}");
 			float height = logOutputLabel.GetPreferredHeight();
@@ -54,7 +54,11 @@ public class Logger : MonoBehaviour
 			logVerticalScrollbar.value = 0f;
 			StartCoroutine(LowerScrollbar());
 		}
-		Files.instance.AppendFileText("Log", $"[{DateTime.Now}]: {displayMessage}");
+        if (outputToFile)
+        {
+            Files.instance.AppendFileText("Log", $"[{DateTime.Now}]: {displayMessage}");
+        }
+        
 	}
 	
 	public IEnumerator LowerScrollbar()
